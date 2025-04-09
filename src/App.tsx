@@ -66,6 +66,23 @@ function App() {
      setCity(event.target.value);
   };
 
+  // Helper function to determine background/animation class based on weather condition
+  const getWeatherClass = (): string => {
+    if (!weatherData || !weatherData.weather || weatherData.weather.length === 0) return 'weather-default';
+    const main = weatherData.weather[0].main.toLowerCase();
+    if (main.includes('clear')) {
+      return 'weather-clear';
+    } else if (main.includes('cloud')) {
+      return 'weather-clouds';
+    } else if (main.includes('rain')) {
+      return 'weather-rain';
+    } else if (main.includes('snow')) {
+      return 'weather-snow';
+    } else {
+      return 'weather-default';
+    }
+  };
+
   return (
     <div className="App">
       <h1>The Weather</h1>
@@ -86,12 +103,11 @@ function App() {
 
       {/* Type safety: weatherData could be null */}
       {weatherData && (
-        <div className="weather-display">
-          {/* Access properties safely */}
+        // Add dynamic class based on weather condition for background & animation
+        <div className={`weather-display ${getWeatherClass()}`}>
           <h2>{weatherData.name}, {weatherData.sys?.country}</h2>
           <p>Temperature: {Math.round(weatherData.main.temp)}°C</p>
           <p>Feels Like: {Math.round(weatherData.main.feels_like)}°C</p>
-          {/* Check if weather array exists and has elements */}
           {weatherData.weather && weatherData.weather.length > 0 && (
             <>
               <p>Condition: {weatherData.weather[0].main} ({weatherData.weather[0].description})</p>
@@ -103,7 +119,7 @@ function App() {
             </>
           )}
           <p>Humidity: {weatherData.main.humidity}%</p>
-          <p>Wind Speed: {weatherData.wind?.speed} m/s</p> {/* Optional chaining for safety */}
+          <p>Wind Speed: {weatherData.wind?.speed} m/s</p>
         </div>
       )}
     </div>
