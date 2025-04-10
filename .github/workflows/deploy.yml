@@ -4,7 +4,7 @@ name: Build, Scan, Analyze, Test (DAST), and Deploy Weather App
 
 on:
   push:
-    branches: [ "main" ] # Adjust branch if needed
+    branches: [ "main" ]
   workflow_dispatch:
 
 permissions:
@@ -18,9 +18,15 @@ concurrency:
   group: "pages"
   cancel-in-progress: false
 
+# Set repository name as an environment variable for the whole workflow
+env:
+  REPO_NAME: ${{ github.event.repository.name }} # e.g., weather-app
+
 jobs:
-  build_and_test: # Renamed job to reflect its broader scope
+  build_and_test:
     runs-on: ubuntu-latest
+    env: # Make REPO_NAME available to steps in this job too
+      REPO_NAME: ${{ github.event.repository.name }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -47,56 +53,97 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build React App
+      - name: Build React App (using repo base path)
+        # This build will use base: '/${REPO_NAME}/' because GITHUB_ACTIONS is true
         run: npm run build
         env:
           VITE_OPENWEATHERMAP_API_KEY: ${{ secrets.WEATHER_API_KEY }}
+          # GITHUB_REPOSITORY is automatically available, vite.config.ts uses it
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
 
-      # --- Start of DAST Steps ---
+      # --- DAST Steps Adjusted for Base Path ---
       - name: Install simple HTTP server
-        run: npm install -g serve # Installs 'serve' globally in the runner
+        run: npm install -g serve
+
+      # - name: Create directory structure for serving
+      #   # Create a root directory and move the built 'dist' contents into a subdirectory
+      #   # named after the repository, mimicking the GitHub Pages structure.
+      #   run: |
+      #     mkdir serve_root
+      #     mv dist/* serve_root/ # Move contents of dist into serve_root
+      #     mkdir serve_root/${{ env.REPO_NAME }} # Create the repo subdirectory
+      #     mv serve_root/* serve_root/${{ env.REPO_NAME }}/ # Move files into the repo subdir, except the subdir itself
+      #     # Correctly handle moving into the subdirectory (ensure hidden files move too if any)
+      #     # A potentially safer way:
+      #     # mkdir serve_root serve_root/${{ env.REPO_NAME }}
+      #     # shopt -s dotglob # Include hidden files
+      #     # mv dist/* serve_root/${{ env.REPO_NAME }}/
+      #     # Let's try a simpler approach first:
+      #     # mkdir serve_root
+      #     # mv dist serve_root/${{ env.REPO_NAME }} # Move the whole dist folder
+
+      - name: Recreate structure (Simpler Method)
+        # Create a directory to serve from
+        # Move the *entire* dist folder into it, renaming it to match the repo name
+        run: |
+          mkdir serve_root
+          mv dist serve_root/${{ env.REPO_NAME }}
+
+      - name: List serve_root contents (for debugging)
+        run: ls -lR serve_root
 
       - name: Start local server for DAST scan
-        # Run 'serve' in the background (&) to serve the 'dist' folder on port 8080
-        # '-s' flag rewrites all requests to index.html (good for SPAs)
-        # Output is redirected to /dev/null to avoid cluttering logs
-        run: serve -s dist -l 8080 &> /dev/null &
+        # Serve the 'serve_root' directory. Requests to /${REPO_NAME}/ will now find the files.
+        # The '-s' SPA fallback should still work correctly within that context.
+        run: serve -s serve_root -l 8080 &> /dev/null &
 
       - name: Wait for server to be ready
-        # Give the server a moment to start up
         run: sleep 5
 
       - name: Run OWASP ZAP Baseline Scan (DAST)
-        uses: zaproxy/action-baseline@v0.11.0 # Pinned version
+        id: zap_scan
+        uses: zaproxy/action-baseline@v0.11.0
         with:
-          # Target the local server started in the previous step
-          target: 'http://localhost:8080/'
-          # You can customize the rules or thresholds if needed:
-          # cmd_options: '-a -T 5' # Example: include alpha rules, max 5 mins
-          # fail_action: true # Default is true, fail the job if alerts are found
-          # You might want to specify a rules file later for more control:
-          # rules_file_name: '.zap/rules.tsv'
-          # Allow INFO alerts, fail on others (useful for static sites)
-          cmd_options: "-r report.html -w warn.md -l INFO"
+          # Target the application at its expected base path
+          target: 'http://localhost:8080/${{ env.REPO_NAME }}/'
+          cmd_options: "-r report.html -w report.md -l INFO"
+          fail_action: false # Don't fail step on ZAP error code, check manually
+
+      - name: Upload ZAP Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-scan-report
+          path: |
+            report.html
+            report.md
+
+      - name: Check ZAP Scan Result
+        if: steps.zap_scan.outputs.exit_code != '0'
+        run: |
+          echo "OWASP ZAP Scan failed with exit code: ${{ steps.zap_scan.outputs.exit_code }}"
+          echo "Alerts found at level LOW or higher. Check the 'zap-scan-report' artifact for details."
+          exit 1
+
       # --- End of DAST Steps ---
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
-        # This step needs to run even if ZAP finds *only* informational alerts
-        # If ZAP fails on higher alerts, the job stops before this anyway.
+        # This only runs if ZAP check step passes
 
-      - name: Upload artifact
+      - name: "Upload artifact (Important: Upload original 'dist')"
         uses: actions/upload-pages-artifact@v3
         with:
-          path: './dist'
-        # This step also needs to run if ZAP finds *only* informational alerts
+          # We upload the original 'dist' folder produced by 'npm run build',
+          # NOT the 'serve_root' directory we created for DAST.
+          # The build step correctly built 'dist' with the /${REPO_NAME}/ base path.
+          path: './serve_root/${{ env.REPO_NAME }}' # Upload the content that was served
 
   deploy:
     runs-on: ubuntu-latest
-    needs: build_and_test # Depends on the combined build and test job
+    needs: build_and_test
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
