@@ -84,6 +84,12 @@ jobs:
           cmd_options: "-r report_html -w report_md -l INFO"
           fail_action: false
           allow_issue_writing: false
+      
+      - name: Comment ZAP Results on PR
+        if: always()
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          path: report_md.md
 
       - name: Upload ZAP Report
         if: always()
@@ -91,8 +97,8 @@ jobs:
         with:
           name: zapreport
           path: |
-            ./report.html
-            ./report.md
+            ./report_html.html
+            ./report_md.md
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
