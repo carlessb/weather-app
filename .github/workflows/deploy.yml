@@ -85,6 +85,9 @@ jobs:
           fail_action: false
           allow_issue_writing: false
       
+      - name: List files in workspace (Verify ZAP reports)
+        run: ls -l .
+
       - name: Comment ZAP Results on PR
         if: always()
         uses: marocchino/sticky-pull-request-comment@v2
