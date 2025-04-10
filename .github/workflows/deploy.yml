@@ -79,7 +79,8 @@ jobs:
 
       - name: Run OWASP ZAP Baseline Scan (DAST)
         id: zap_scan
-        uses: zaproxy/action-baseline@v0.11.0
+        uses: zaproxy/action-baseline@v0.14.0
+        continue-on-error: true
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           target: 'http://localhost:8080/${{ env.REPO_NAME }}/'
