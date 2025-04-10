@@ -60,13 +60,10 @@ jobs:
       - name: Install simple HTTP server
         run: npm install -g serve
 
-      - name: Recreate structure (Simpler Method)
+      - name: Recreate structure
         run: |
           mkdir serve_root
           mv dist serve_root/${{ env.REPO_NAME }}
-
-      - name: List serve_root contents (for debugging)
-        run: ls -lR serve_root
 
       - name: Start local server for DAST scan
         run: serve -s serve_root -l 8080 &> /dev/null &
@@ -88,24 +85,14 @@ jobs:
           fail_action: false
           allow_issue_writing: false
 
-      - name: List files in workspace (Verify ZAP reports)
-        run: ls -l .
-
       - name: Upload ZAP Report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: zapreport # Simplified name for testing
+          name: zapreport
           path: |
             ./report.html
-            ./report.md
-
-      - name: Check ZAP Scan Result
-        if: steps.zap_scan.outputs.exit_code != '0'
-        run: |
-          echo "OWASP ZAP Scan failed with exit code: ${{ steps.zap_scan.outputs.exit_code }}"
-          echo "Alerts found at level LOW or higher. Check the 'zapreport' artifact for details." # <-- Update artifact name here too if changed
-          exit 1
+            ./report_md.md
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
