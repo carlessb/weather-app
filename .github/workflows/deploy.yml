@@ -84,7 +84,6 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           target: 'http://localhost:8080/${{ env.REPO_NAME }}/'
-          cmd_options: "-r report.html -w report.md -l INFO"
           fail_action: false
           allow_issue_writing: false
 
