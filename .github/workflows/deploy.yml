@@ -75,41 +75,36 @@ jobs:
         run: sleep 5
 
       - name: Grant write permissions to workspace for ZAP report
-        # The ZAP container runs as a different user and needs write access
-        # to the mounted workspace (/zap/wrk) to save reports.
         run: chmod -R a+w .
 
       - name: Run OWASP ZAP Baseline Scan (DAST)
         id: zap_scan
         uses: zaproxy/action-baseline@v0.11.0
         with:
-          token: ${{ secrets.GITHUB_TOKEN }} # Explicitly provide the token (good practice)
+          token: ${{ secrets.GITHUB_TOKEN }}
           target: 'http://localhost:8080/${{ env.REPO_NAME }}/'
           cmd_options: "-r report.html -w report.md -l INFO"
           fail_action: false
           allow_issue_writing: false
 
+      - name: List files in workspace (Verify ZAP reports)
+        run: ls -l .
+
       - name: Upload ZAP Report
-        # Note: The 'if: always()' ensures this runs even if zap_scan fails internally
-        # but before your custom exit check.
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: zap-scan-report
+          name: zapreport # Simplified name for testing
           path: |
-            report.html
-            report.md
+            ./report.html
+            ./report.md
 
       - name: Check ZAP Scan Result
-        # This check still works because fail_action: false makes the ZAP action step
-        # itself succeed in GitHub Actions terms, but sets the exit_code output.
         if: steps.zap_scan.outputs.exit_code != '0'
         run: |
           echo "OWASP ZAP Scan failed with exit code: ${{ steps.zap_scan.outputs.exit_code }}"
-          echo "Alerts found at level LOW or higher. Check the 'zap-scan-report' artifact for details."
-          exit 1 # Explicitly fail the job here
-
-      # --- End of DAST Steps ---
+          echo "Alerts found at level LOW or higher. Check the 'zapreport' artifact for details." # <-- Update artifact name here too if changed
+          exit 1
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
