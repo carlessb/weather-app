@@ -29,6 +29,7 @@ jobs:
       with:
         extra_args: --results=verified,unknown
   build:
+    needs: test # This job only runs if the 'test' job (including the scan) succeeds
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
