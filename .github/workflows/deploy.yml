@@ -8,19 +8,14 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read    # For checkout, TruffleHog, CodeQL init/analyze
-  pages: write      # For GitHub Pages deployment
-  id-token: write   # For GitHub Pages deployment
-  security-events: write # Required for CodeQL to upload findings
-  actions: read     # Required for CodeQL init/analyze
+  contents: read
+  pages: write
+  id-token: write
+  security-events: write
+  actions: read
 
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
-
-# Set repository name as an environment variable for the whole workflow
 env:
-  REPO_NAME: ${{ github.event.repository.name }} # e.g., weather-app
+  REPO_NAME: ${{ github.event.repository.name }}
 
 jobs:
   build_and_test:
@@ -54,11 +49,9 @@ jobs:
         run: npm ci
 
       - name: Build React App (using repo base path)
-        # This build will use base: '/${REPO_NAME}/' because GITHUB_ACTIONS is true
         run: npm run build
         env:
           VITE_OPENWEATHERMAP_API_KEY: ${{ secrets.WEATHER_API_KEY }}
-          # GITHUB_REPOSITORY is automatically available, vite.config.ts uses it
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
@@ -67,26 +60,7 @@ jobs:
       - name: Install simple HTTP server
         run: npm install -g serve
 
-      # - name: Create directory structure for serving
-      #   # Create a root directory and move the built 'dist' contents into a subdirectory
-      #   # named after the repository, mimicking the GitHub Pages structure.
-      #   run: |
-      #     mkdir serve_root
-      #     mv dist/* serve_root/ # Move contents of dist into serve_root
-      #     mkdir serve_root/${{ env.REPO_NAME }} # Create the repo subdirectory
-      #     mv serve_root/* serve_root/${{ env.REPO_NAME }}/ # Move files into the repo subdir, except the subdir itself
-      #     # Correctly handle moving into the subdirectory (ensure hidden files move too if any)
-      #     # A potentially safer way:
-      #     # mkdir serve_root serve_root/${{ env.REPO_NAME }}
-      #     # shopt -s dotglob # Include hidden files
-      #     # mv dist/* serve_root/${{ env.REPO_NAME }}/
-      #     # Let's try a simpler approach first:
-      #     # mkdir serve_root
-      #     # mv dist serve_root/${{ env.REPO_NAME }} # Move the whole dist folder
-
       - name: Recreate structure (Simpler Method)
-        # Create a directory to serve from
-        # Move the *entire* dist folder into it, renaming it to match the repo name
         run: |
           mkdir serve_root
           mv dist serve_root/${{ env.REPO_NAME }}
@@ -95,21 +69,23 @@ jobs:
         run: ls -lR serve_root
 
       - name: Start local server for DAST scan
-        # Serve the 'serve_root' directory. Requests to /${REPO_NAME}/ will now find the files.
-        # The '-s' SPA fallback should still work correctly within that context.
         run: serve -s serve_root -l 8080 &> /dev/null &
 
       - name: Wait for server to be ready
         run: sleep 5
 
+      - name: Grant write permissions to workspace for ZAP report
+        # The ZAP container runs as a different user and needs write access
+        # to the mounted workspace (/zap/wrk) to save reports.
+        run: chmod -R a+w .
+
       - name: Run OWASP ZAP Baseline Scan (DAST)
         id: zap_scan
         uses: zaproxy/action-baseline@v0.11.0
         with:
-          # Target the application at its expected base path
           target: 'http://localhost:8080/${{ env.REPO_NAME }}/'
           cmd_options: "-r report.html -w report.md -l INFO"
-          fail_action: false # Don't fail step on ZAP error code, check manually
+          fail_action: false
 
       - name: Upload ZAP Report
         if: always()
@@ -131,15 +107,11 @@ jobs:
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
-        # This only runs if ZAP check step passes
 
-      - name: "Upload artifact (Important: Upload original 'dist')"
+      - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          # We upload the original 'dist' folder produced by 'npm run build',
-          # NOT the 'serve_root' directory we created for DAST.
-          # The build step correctly built 'dist' with the /${REPO_NAME}/ base path.
-          path: './serve_root/${{ env.REPO_NAME }}' # Upload the content that was served
+          path: './serve_root/${{ env.REPO_NAME }}'
 
   deploy:
     runs-on: ubuntu-latest
